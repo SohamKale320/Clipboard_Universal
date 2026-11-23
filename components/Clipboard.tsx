@@ -127,8 +127,11 @@ export default function Clipboard({ initialCode = "" }: { initialCode?: string }
 
   return (
     <main className="shell">
-      <header className="top">
-        <h1 className="brand">Clipboard</h1>
+      <header className="hero">
+        <h1>
+          <span className="l1">Stored</span>
+          <span className="l2">clipboard</span>
+        </h1>
         <p className="tag">Paste text here, open it on any other device with a 6-digit code.</p>
       </header>
 

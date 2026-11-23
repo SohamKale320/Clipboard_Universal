@@ -33,8 +33,11 @@ export default function LiveHome() {
 
   return (
     <main className="shell">
-      <header className="top">
-        <h1 className="brand">Live clipboard</h1>
+      <header className="hero">
+        <h1>
+          <span className="l1">Live</span>
+          <span className="l2">clipboard</span>
+        </h1>
         <p className="tag">
           Open the same room on two devices. Whatever you type shows up on both, within about a second.
         </p>

@@ -17,8 +17,11 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en">
       <body>
-        <Nav />
-        {children}
+        <div className="bg" aria-hidden="true" />
+        <div className="frame">
+          <Nav />
+          {children}
+        </div>
       </body>
     </html>
   );

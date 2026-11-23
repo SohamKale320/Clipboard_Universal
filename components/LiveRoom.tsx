@@ -227,8 +227,11 @@ export default function LiveRoom({ code }: { code: string }) {
   if (status === "gone") {
     return (
       <main className="shell">
-        <header className="top">
-          <h1 className="brand">Room not found</h1>
+        <header className="hero">
+          <h1>
+            <span className="l1">Room</span>
+            <span className="l2">not found</span>
+          </h1>
           <p className="tag">
             Room {code} doesn&apos;t exist, or it expired after 24 hours without edits.
           </p>
@@ -247,11 +250,13 @@ export default function LiveRoom({ code }: { code: string }) {
 
   return (
     <main className="shell">
-      <header className="top livehead">
-        <p className="lbl">Live room</p>
-        <div className="livecode" aria-label={`Room ${code.split("").join(" ")}`}>
-          {code.slice(0, 3)} {code.slice(3)}
-        </div>
+      <header className="hero">
+        <h1 aria-label={`Live room ${code.split("").join(" ")}`}>
+          <span className="l1 mono">
+            {code.slice(0, 3)} {code.slice(3)}
+          </span>
+          <span className="l2">live room</span>
+        </h1>
       </header>
 
       <section className="panel">
