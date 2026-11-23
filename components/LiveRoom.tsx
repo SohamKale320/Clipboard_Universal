@@ -6,8 +6,8 @@ import QRCode from "qrcode";
 
 type Status = "connecting" | "live" | "offline" | "gone";
 
-const SAVE_DELAY = 500; // ms after last keystroke
-const FAST_POLL = 1000;
+const SAVE_DELAY = 250; // ms after last keystroke
+const FAST_POLL = 500;
 const SLOW_POLL = 3000;
 const QUIET_AFTER = 15000;
 

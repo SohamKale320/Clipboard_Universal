@@ -23,13 +23,13 @@ export const readLimit = new Ratelimit({
 // Live rooms are polled about once a second, so these limits are much looser.
 export const liveReadLimit = new Ratelimit({
   redis,
-  limiter: Ratelimit.fixedWindow(240, "1 m"),
+  limiter: Ratelimit.fixedWindow(600, "1 m"),
   prefix: "rl:liveread",
 });
 
 export const liveWriteLimit = new Ratelimit({
   redis,
-  limiter: Ratelimit.fixedWindow(240, "1 m"),
+  limiter: Ratelimit.fixedWindow(600, "1 m"),
   prefix: "rl:livewrite",
 });
 
