@@ -1,5 +1,5 @@
-import Clipboard from "@/components/Clipboard";
+import { redirect } from "next/navigation";
 
 export default function Home() {
-  return <Clipboard />;
+  redirect("/live");
 }

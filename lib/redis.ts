@@ -20,6 +20,19 @@ export const readLimit = new Ratelimit({
   prefix: "rl:read",
 });
 
+// Live rooms are polled about once a second, so these limits are much looser.
+export const liveReadLimit = new Ratelimit({
+  redis,
+  limiter: Ratelimit.fixedWindow(240, "1 m"),
+  prefix: "rl:liveread",
+});
+
+export const liveWriteLimit = new Ratelimit({
+  redis,
+  limiter: Ratelimit.fixedWindow(240, "1 m"),
+  prefix: "rl:livewrite",
+});
+
 export function clientIp(req: Request): string {
   return req.headers.get("x-forwarded-for")?.split(",")[0].trim() ?? "unknown";
 }
