@@ -88,3 +88,25 @@ export async function PUT(
     return NextResponse.json({ error: "Server error." }, { status: 500 });
   }
 }
+
+// Delete the room for everyone.
+export async function DELETE(
+  req: NextRequest,
+  { params }: { params: Promise<{ code: string }> }
+) {
+  try {
+    const { code } = await params;
+    if (!/^\d{6}$/.test(code)) {
+      return NextResponse.json({ error: "Codes are 6 digits." }, { status: 400 });
+    }
+    const limited = await liveWriteLimit.limit(clientIp(req));
+    if (!limited.success) {
+      return NextResponse.json({ error: "Too many requests." }, { status: 429 });
+    }
+    await redis.del(vKey(code), tKey(code));
+    return NextResponse.json({ ok: true }, { headers: NO_STORE });
+  } catch (e) {
+    console.error(e);
+    return NextResponse.json({ error: "Server error." }, { status: 500 });
+  }
+}

@@ -209,3 +209,5 @@ textarea { resize: vertical; min-height: 160px; font-family: var(--mono); font-s
 .spacer { flex: 1; }
 .linkbtn { font: inherit; color: var(--accent); background: none; border: 0; padding: 0; cursor: pointer; text-decoration: underline; }
 .divider { text-align: center; color: var(--muted); font-size: 14px; }
+
+.secondary.danger { color: var(--err); border-color: var(--err); }

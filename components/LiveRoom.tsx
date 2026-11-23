@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import QRCode from "qrcode";
 
 type Status = "connecting" | "live" | "offline" | "gone";
@@ -12,6 +13,7 @@ const SLOW_POLL = 3000;
 const QUIET_AFTER = 15000;
 
 export default function LiveRoom({ code }: { code: string }) {
+  const router = useRouter();
   const [text, setText] = useState("");
   const [status, setStatus] = useState<Status>("connecting");
   const [error, setError] = useState("");
@@ -177,6 +179,41 @@ export default function LiveRoom({ code }: { code: string }) {
     scheduleSave(0);
   }
 
+  async function leaveRoom() {
+    // Save any unsent edit first so it isn't lost, then go back to the start page.
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    if (dirtyRef.current) {
+      try {
+        await fetch(`/api/live/${code}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ text: textRef.current }),
+          keepalive: true,
+        });
+      } catch {
+        /* leaving anyway */
+      }
+    }
+    router.push("/live");
+  }
+
+  async function deleteRoom() {
+    if (!window.confirm("Delete this room for everyone? The text will be gone for all devices.")) return;
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    try {
+      const res = await fetch(`/api/live/${code}`, { method: "DELETE" });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setError(data.error || "Could not delete the room.");
+        return;
+      }
+    } catch {
+      setError("Could not reach the server. Try again.");
+      return;
+    }
+    router.push("/live");
+  }
+
   async function copy(what: string, value: string) {
     try {
       await navigator.clipboard.writeText(value);
@@ -255,6 +292,15 @@ export default function LiveRoom({ code }: { code: string }) {
           </button>
           <button className="secondary" onClick={clearAll} disabled={!text}>
             Clear text
+          </button>
+        </div>
+
+        <div className="row">
+          <button className="secondary" onClick={leaveRoom}>
+            Leave room
+          </button>
+          <button className="secondary danger" onClick={deleteRoom}>
+            Delete room
           </button>
         </div>
 
