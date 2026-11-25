@@ -5,7 +5,8 @@ import { usePathname } from "next/navigation";
 
 export default function Nav() {
   const path = usePathname();
-  const live = path.startsWith("/live");
+  const mode = path.startsWith("/live") ? "live" : path.startsWith("/files") ? "files" : "stored";
+  const cls = (m: string) => (mode === m ? "segbtn on" : "segbtn");
   return (
     <header className="appbar">
       <div className="appmark" aria-hidden="true">
@@ -17,10 +18,13 @@ export default function Nav() {
       </div>
       <span className="appname">Clipboard</span>
       <nav className="seg" aria-label="Mode">
-        <Link href="/live" className={live ? "segbtn on" : "segbtn"}>
+        <Link href="/live" className={cls("live")}>
           Live
         </Link>
-        <Link href="/stored" className={!live ? "segbtn on" : "segbtn"}>
+        <Link href="/files" className={cls("files")}>
+          Files
+        </Link>
+        <Link href="/stored" className={cls("stored")}>
           Stored
         </Link>
       </nav>

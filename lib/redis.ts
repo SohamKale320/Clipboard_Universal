@@ -1,5 +1,6 @@
 import { Redis } from "@upstash/redis";
 import { Ratelimit } from "@upstash/ratelimit";
+import { MONTHLY_UPLOADS } from "./fileconfig";
 
 const url =
   process.env.KV_REST_API_URL ?? process.env.UPSTASH_REDIS_REST_URL ?? "";
@@ -31,6 +32,19 @@ export const liveWriteLimit = new Ratelimit({
   redis,
   limiter: Ratelimit.fixedWindow(600, "1 m"),
   prefix: "rl:livewrite",
+});
+
+// File uploads: per-IP, plus a site-wide monthly cap so the free Blob quota can't be burned.
+export const fileLimit = new Ratelimit({
+  redis,
+  limiter: Ratelimit.slidingWindow(10, "1 h"),
+  prefix: "rl:file",
+});
+
+export const fileGlobalLimit = new Ratelimit({
+  redis,
+  limiter: Ratelimit.fixedWindow(MONTHLY_UPLOADS, "30 d"),
+  prefix: "rl:fileglobal",
 });
 
 export function clientIp(req: Request): string {
