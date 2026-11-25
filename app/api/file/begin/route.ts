@@ -7,6 +7,12 @@ export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
   try {
+    if (!process.env.BLOB_READ_WRITE_TOKEN && !process.env.BLOB_STORE_ID) {
+      return NextResponse.json(
+        { error: "File storage isn't connected yet. Add a Blob store to the Vercel project and redeploy." },
+        { status: 503 }
+      );
+    }
     const { size } = await req.json().catch(() => ({ size: undefined }));
     if (typeof size !== "number" || !(size > 0)) {
       return NextResponse.json({ error: "Pick a file first." }, { status: 400 });

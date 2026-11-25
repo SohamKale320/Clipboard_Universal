@@ -116,7 +116,12 @@ export default function Files({ initialCode = "" }: { initialCode?: string }) {
       if (ac.signal.aborted) {
         setSendError("");
       } else {
-        setSendError(e instanceof Error ? e.message : "Upload failed. Try again.");
+        const msg = e instanceof Error ? e.message : "";
+        setSendError(
+          msg.includes("client token")
+            ? "The upload was refused by the server. Try again in a moment. If it keeps happening, the Blob storage may not be set up correctly."
+            : msg || "Upload failed. Try again."
+        );
       }
     } finally {
       setPhase("idle");
@@ -190,7 +195,7 @@ export default function Files({ initialCode = "" }: { initialCode?: string }) {
 
   return (
     <main className="shell">
-      <header className="hero">
+      <header className="hero center">
         <h1>
           <span className="l1">Send</span>
           <span className="l2">a file</span>
