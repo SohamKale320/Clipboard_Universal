@@ -8,20 +8,28 @@ import PusherClient, { type PresenceChannel } from "pusher-js";
 
 type Status = "connecting" | "live" | "offline" | "gone";
 
-const SAVE_DELAY = 120; // ms: edits are sent at most this often while typing
-const FAST_POLL = 400; // used only when real-time (Pusher) isn't available
-const SLOW_POLL = 1500; // when nothing has happened for a while
-const POLL_TIMEOUT = 4000; // give up on a stuck request after this and try again
-const SAVE_TIMEOUT = 6000;
-const SAFETY_POLL = 8000; // when real-time is connected, just a backstop
+// Every version of the text carries a stamp: a logical clock plus the writer's id as tie-breaker.
+// The highest stamp wins everywhere (socket messages, saved copy, polling), so devices converge
+// no matter what order messages arrive in.
+type Stamp = { rev: number; from: string };
+const newer = (a: Stamp, b: Stamp) => a.rev > b.rev || (a.rev === b.rev && a.from > b.from);
+
+const SEND_EVERY = 110; // ms between live-socket messages while typing (Pusher allows 10 per second)
+const MAX_SOCKET_BYTES = 7000; // Pusher events are limited to 10 KB; bigger text uses the saved copy
+const SAVE_DELAY_REALTIME = 500; // saved copy only needs to keep up loosely when the socket is live
+const SAVE_DELAY_POLLING = 120;
+const FAST_POLL = 400; // polling is the fallback when the live socket isn't connected
+const SLOW_POLL = 1500;
+const SAFETY_POLL = 8000; // backstop while the socket is connected
 const QUIET_AFTER = 15000;
-const TYPING_IDLE = 400; // don't overwrite the box while you are actively typing
+const POLL_TIMEOUT = 4000;
+const SAVE_TIMEOUT = 6000;
+const TYPING_IDLE = 400; // don't replace the box while you are actively typing
 
 const PUSHER_KEY = process.env.NEXT_PUBLIC_PUSHER_KEY;
 const PUSHER_CLUSTER = process.env.NEXT_PUBLIC_PUSHER_CLUSTER;
 
-// A request that can never hang: it is cancelled after `ms`, so one stalled connection
-// (very common on phones and Wi-Fi) can't freeze syncing for a minute.
+// A request that can never hang: cancelled after `ms` so one stalled connection can't freeze syncing.
 async function timedJson(url: string, init: RequestInit, ms: number) {
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), ms);
@@ -46,24 +54,38 @@ export default function LiveRoom({ code }: { code: string }) {
   const [copied, setCopied] = useState("");
   const [showQr, setShowQr] = useState(false);
   const [qr, setQr] = useState("");
-  const [staleSecs, setStaleSecs] = useState(0); // seconds since the last successful sync, 0 = fresh
-  const [peers, setPeers] = useState<number | null>(null); // devices in the room, null = unknown
+  const [staleSecs, setStaleSecs] = useState(0);
+  const [peers, setPeers] = useState<number | null>(null);
+  const [instant, setInstant] = useState(false); // live socket connected
 
   const taRef = useRef<HTMLTextAreaElement>(null);
+  const clientId = useRef(randomId());
   const textRef = useRef("");
-  const versionRef = useRef(-1);
-  const dirtyRef = useRef(false);
+  const stampRef = useRef<Stamp>({ rev: -1, from: "" }); // stamp of the text on screen
+  const seenRevRef = useRef(-1); // highest clock value seen from anyone
+  const versionRef = useRef(-1); // saved-copy version, for cheap "anything new?" polls
+  const dirtyRef = useRef(false); // local edits not yet saved
+  const pendingRef = useRef<{ text: string; stamp: Stamp } | null>(null); // remote text waiting for you to stop typing
+  const pendingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastTypedRef = useRef(0);
   const lastActivityRef = useRef(Date.now());
+  const lastOkRef = useRef(Date.now());
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const savingRef = useRef(false);
   const saveRef = useRef<() => void>(() => {});
-  const clientId = useRef(randomId());
-  const lastOkRef = useRef(Date.now());
-  const connectedRef = useRef(false); // true while the real-time connection is up
+  const channelRef = useRef<PresenceChannel | null>(null);
+  const connectedRef = useRef(false);
+  const sendTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastSendRef = useRef(0);
   const fetchRef = useRef<() => Promise<"ok" | "gone" | "limited" | "error">>(async () => "ok");
-  const applyIfIdleRef = useRef<(remote: string, v: number) => void>(() => {});
+  const considerRef = useRef<(remote: string, stamp: Stamp) => void>(() => {});
 
+  function setConnected(on: boolean) {
+    connectedRef.current = on;
+    setInstant(on);
+  }
+
+  // ---------- saving the backup copy ----------
   function scheduleSave(delay: number) {
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(() => {
@@ -71,36 +93,34 @@ export default function LiveRoom({ code }: { code: string }) {
       saveRef.current();
     }, delay);
   }
+  const saveDelay = () => (connectedRef.current ? SAVE_DELAY_REALTIME : SAVE_DELAY_POLLING);
 
-  // Latest save function lives in a ref so retries always call the current one.
   saveRef.current = async () => {
     if (savingRef.current) {
       scheduleSave(100);
       return;
     }
     const snapshot = textRef.current;
+    const stamp = stampRef.current;
     savingRef.current = true;
     try {
-      const { status, ok, data } = await timedJson(
+      const { status: st, ok, data } = await timedJson(
         `/api/live/${code}`,
         {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text: snapshot, from: clientId.current }),
+          body: JSON.stringify({ text: snapshot, from: clientId.current, rev: stamp.rev }),
         },
         SAVE_TIMEOUT
       );
       if (ok) {
-        versionRef.current = data.v;
+        if (data.applied) versionRef.current = data.v;
         lastOkRef.current = Date.now();
         setStatus("live");
         setError("");
-        if (textRef.current === snapshot) {
-          dirtyRef.current = false;
-        } else {
-          scheduleSave(SAVE_DELAY); // typed more while saving
-        }
-      } else if (status === 404) {
+        if (textRef.current === snapshot) dirtyRef.current = false;
+        else scheduleSave(saveDelay()); // typed more while saving
+      } else if (st === 404) {
         setStatus("gone");
       } else {
         setError(data.error || "Could not save your last change.");
@@ -108,18 +128,48 @@ export default function LiveRoom({ code }: { code: string }) {
       }
     } catch {
       setStatus("offline");
-      scheduleSave(1000); // keep dirty, retry quickly
+      scheduleSave(1000);
     } finally {
       savingRef.current = false;
     }
   };
 
-  function applyRemote(remote: string, v: number) {
+  // ---------- sending live over the socket ----------
+  function broadcastNow() {
+    const ch = channelRef.current;
+    if (!ch || !connectedRef.current) return;
+    if (stampRef.current.from !== clientId.current) return; // only send text that is mine
+    const payload = { from: clientId.current, rev: stampRef.current.rev, text: textRef.current };
+    if (JSON.stringify(payload).length > MAX_SOCKET_BYTES) return; // too big, saved copy carries it
+    lastSendRef.current = Date.now();
+    try {
+      ch.trigger("client-text", payload);
+    } catch {
+      /* the saved copy and polling still cover it */
+    }
+  }
+
+  function queueBroadcast() {
+    if (sendTimer.current) return;
+    const wait = Math.max(0, SEND_EVERY - (Date.now() - lastSendRef.current));
+    sendTimer.current = setTimeout(() => {
+      sendTimer.current = null;
+      broadcastNow();
+    }, wait);
+  }
+
+  // ---------- receiving ----------
+  function applyNow(remote: string, stamp: Stamp) {
     const ta = taRef.current;
     const start = ta?.selectionStart ?? 0;
     const end = ta?.selectionEnd ?? 0;
     textRef.current = remote;
-    versionRef.current = v;
+    stampRef.current = stamp;
+    dirtyRef.current = false; // anything unsaved of mine was older, so it is superseded
+    if (saveTimer.current) {
+      clearTimeout(saveTimer.current);
+      saveTimer.current = null;
+    }
     setText(remote);
     requestAnimationFrame(() => {
       if (ta && document.activeElement === ta) {
@@ -128,31 +178,55 @@ export default function LiveRoom({ code }: { code: string }) {
     });
   }
 
-  // Apply a remote change only if it is newer and you are not in the middle of typing.
-  function applyIfIdle(remote: string, v: number) {
-    if (v <= versionRef.current) return;
-    const idle = Date.now() - lastTypedRef.current > TYPING_IDLE;
-    if (!dirtyRef.current && idle) applyRemote(remote, v);
+  function flushPending() {
+    pendingTimer.current = null;
+    const p = pendingRef.current;
+    if (!p) return;
+    if (!newer(p.stamp, stampRef.current)) {
+      pendingRef.current = null; // my own newer edit won
+      return;
+    }
+    if (Date.now() - lastTypedRef.current > TYPING_IDLE) {
+      pendingRef.current = null;
+      applyNow(p.text, p.stamp);
+    } else {
+      pendingTimer.current = setTimeout(flushPending, TYPING_IDLE);
+    }
+  }
+
+  function consider(remote: string, stamp: Stamp) {
+    seenRevRef.current = Math.max(seenRevRef.current, stamp.rev);
+    if (!newer(stamp, stampRef.current)) return; // not newer than what is on screen
+    if (Date.now() - lastTypedRef.current > TYPING_IDLE) {
+      pendingRef.current = null;
+      applyNow(remote, stamp);
+    } else {
+      if (!pendingRef.current || newer(stamp, pendingRef.current.stamp)) {
+        pendingRef.current = { text: remote, stamp };
+      }
+      if (!pendingTimer.current) pendingTimer.current = setTimeout(flushPending, TYPING_IDLE);
+    }
   }
 
   async function fetchAndApply(): Promise<"ok" | "gone" | "limited" | "error"> {
     try {
-      const { status, ok, data } = await timedJson(
+      const { status: st, ok, data } = await timedJson(
         `/api/live/${code}?v=${versionRef.current}`,
         { cache: "no-store" },
         POLL_TIMEOUT
       );
-      if (status === 404) {
+      if (st === 404) {
         setStatus("gone");
         return "gone";
       }
-      if (status === 429) return "limited";
+      if (st === 429) return "limited";
       if (!ok) return "error";
       lastOkRef.current = Date.now();
       setStatus("live");
       if (data.changed) {
         lastActivityRef.current = Date.now();
-        applyIfIdle(data.text, data.v);
+        consider(data.text, { rev: data.rev ?? 0, from: data.from ?? "" });
+        versionRef.current = data.v;
       }
       return "ok";
     } catch {
@@ -161,11 +235,11 @@ export default function LiveRoom({ code }: { code: string }) {
     }
   }
 
-  // Effects run once, so give them the latest versions of these through refs.
+  // Effects run once, so they reach the latest functions through refs.
   fetchRef.current = fetchAndApply;
-  applyIfIdleRef.current = applyIfIdle;
+  considerRef.current = consider;
 
-  // Polling loop: fast on its own, a slow backstop when real-time is connected
+  // ---------- polling: the fallback, and a slow backstop while the socket is up ----------
   useEffect(() => {
     let stopped = false;
     let running = false;
@@ -180,15 +254,14 @@ export default function LiveRoom({ code }: { code: string }) {
       running = true;
       const result = await fetchRef.current();
       running = false;
-      if (stopped || result === "gone") return; // room is gone, stop polling
+      if (stopped || result === "gone") return;
 
       let delay: number;
       if (result === "limited") delay = 2000;
       else if (result === "error") delay = 1000;
       else if (connectedRef.current) delay = SAFETY_POLL;
       else {
-        const quiet =
-          Date.now() - Math.max(lastActivityRef.current, lastTypedRef.current) > QUIET_AFTER;
+        const quiet = Date.now() - Math.max(lastActivityRef.current, lastTypedRef.current) > QUIET_AFTER;
         delay = quiet ? SLOW_POLL : FAST_POLL;
       }
       timer = setTimeout(poll, delay);
@@ -196,19 +269,13 @@ export default function LiveRoom({ code }: { code: string }) {
 
     poll();
 
-    const onVisible = () => {
-      if (!document.hidden && !running) {
-        if (timer) clearTimeout(timer);
-        poll();
-      }
-    };
     const wake = () => {
       if (!document.hidden && !running) {
         if (timer) clearTimeout(timer);
         poll();
       }
     };
-    document.addEventListener("visibilitychange", onVisible);
+    document.addEventListener("visibilitychange", wake);
     window.addEventListener("focus", wake);
     window.addEventListener("online", wake);
     window.addEventListener("pageshow", wake);
@@ -217,15 +284,16 @@ export default function LiveRoom({ code }: { code: string }) {
       stopped = true;
       if (timer) clearTimeout(timer);
       if (saveTimer.current) clearTimeout(saveTimer.current);
-      document.removeEventListener("visibilitychange", onVisible);
+      if (sendTimer.current) clearTimeout(sendTimer.current);
+      if (pendingTimer.current) clearTimeout(pendingTimer.current);
+      document.removeEventListener("visibilitychange", wake);
       window.removeEventListener("focus", wake);
       window.removeEventListener("online", wake);
       window.removeEventListener("pageshow", wake);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [code]);
 
-  // Tell the user when syncing has stalled, instead of letting it just feel laggy
+  // Show it when syncing stalls, instead of letting it just feel laggy
   useEffect(() => {
     const id = setInterval(() => {
       if (document.hidden) return;
@@ -236,7 +304,7 @@ export default function LiveRoom({ code }: { code: string }) {
     return () => clearInterval(id);
   }, []);
 
-  // Real-time: the server pushes every change the moment it is saved
+  // ---------- the live socket ----------
   useEffect(() => {
     if (!PUSHER_KEY || !PUSHER_CLUSTER) return;
     const pusher = new PusherClient(PUSHER_KEY, {
@@ -245,27 +313,46 @@ export default function LiveRoom({ code }: { code: string }) {
     });
     const name = `presence-live-${code}`;
     const channel = pusher.subscribe(name) as PresenceChannel;
+    channelRef.current = channel;
 
     pusher.connection.bind("state_change", (s: { current: string }) => {
-      connectedRef.current = s.current === "connected" && channel.subscribed;
+      setConnected(s.current === "connected" && channel.subscribed);
     });
     channel.bind("pusher:subscription_succeeded", () => {
-      connectedRef.current = true;
+      setConnected(true);
       setPeers(channel.members.count);
-      void fetchRef.current(); // catch up on anything missed while connecting
+      void fetchRef.current(); // get the saved copy so a late joiner starts in sync
     });
-    channel.bind("update", (data: { v: number; from: string; text?: string }) => {
-      if (data.from === clientId.current) return; // my own edit
-      lastActivityRef.current = Date.now();
-      if (typeof data.text === "string") applyIfIdleRef.current(data.text, data.v);
-      else void fetchRef.current(); // large text: fetch it
+    channel.bind("pusher:member_added", () => {
+      setPeers(channel.members.count);
+      // someone just joined: show them what we have right away
+      if (dirtyRef.current || stampRef.current.from === clientId.current) broadcastNow();
     });
-    channel.bind("pusher:member_added", () => setPeers(channel.members.count));
     channel.bind("pusher:member_removed", () => setPeers(channel.members.count));
+
+    // the fast path: the other device's text, straight through the socket
+    channel.bind("client-text", (d: { from?: string; rev?: number; text?: string }) => {
+      if (typeof d?.text !== "string" || typeof d.rev !== "number" || typeof d.from !== "string") return;
+      if (d.from === clientId.current) return;
+      lastActivityRef.current = Date.now();
+      lastOkRef.current = Date.now();
+      considerRef.current(d.text, { rev: d.rev, from: d.from });
+    });
+
+    // a save somewhere: only fetch it if it is newer than what we show (large text, or sockets off)
+    channel.bind("update", (d: { from?: string; rev?: number }) => {
+      if (d?.from === clientId.current) return;
+      if (typeof d?.rev === "number" && typeof d.from === "string") {
+        seenRevRef.current = Math.max(seenRevRef.current, d.rev);
+        if (!newer({ rev: d.rev, from: d.from }, stampRef.current)) return;
+      }
+      void fetchRef.current();
+    });
     channel.bind("deleted", () => setStatus("gone"));
 
     return () => {
-      connectedRef.current = false;
+      channelRef.current = null;
+      setConnected(false);
       setPeers(null);
       channel.unbind_all();
       pusher.unsubscribe(name);
@@ -273,30 +360,36 @@ export default function LiveRoom({ code }: { code: string }) {
     };
   }, [code]);
 
-  // QR for the room link
+  // ---------- QR ----------
   useEffect(() => {
     if (!showQr) return;
     const url = `${window.location.origin}/live/${code}`;
     QRCode.toDataURL(url, { margin: 1, width: 220 }).then(setQr).catch(() => setQr(""));
   }, [showQr, code]);
 
-  function onChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
-    const v = e.target.value;
-    textRef.current = v;
-    setText(v);
+  // ---------- local edits ----------
+  function localEdit(next: string) {
+    textRef.current = next;
+    setText(next);
+    // my edit is newer than everything I have seen, so it wins over buffered remote text
+    stampRef.current = {
+      rev: Math.max(stampRef.current.rev, seenRevRef.current, 0) + 1,
+      from: clientId.current,
+    };
+    seenRevRef.current = stampRef.current.rev;
     dirtyRef.current = true;
     lastTypedRef.current = Date.now();
     lastActivityRef.current = Date.now();
-    if (!saveTimer.current) scheduleSave(SAVE_DELAY);
+    queueBroadcast();
+    if (!saveTimer.current) scheduleSave(saveDelay());
+  }
+
+  function onChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
+    localEdit(e.target.value);
   }
 
   function clearAll() {
-    textRef.current = "";
-    setText("");
-    dirtyRef.current = true;
-    lastTypedRef.current = Date.now();
-    lastActivityRef.current = Date.now();
-    scheduleSave(0);
+    localEdit("");
   }
 
   async function leaveRoom() {
@@ -307,7 +400,11 @@ export default function LiveRoom({ code }: { code: string }) {
         await fetch(`/api/live/${code}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text: textRef.current, from: clientId.current }),
+          body: JSON.stringify({
+            text: textRef.current,
+            from: clientId.current,
+            rev: stampRef.current.rev,
+          }),
           keepalive: true,
         });
       } catch {
@@ -366,7 +463,7 @@ export default function LiveRoom({ code }: { code: string }) {
   }
 
   const statusText =
-    status === "live" ? "Live, synced" : status === "offline" ? "Offline, retrying" : "Connecting…";
+    status === "offline" ? "Offline, retrying" : status === "connecting" ? "Connecting…" : instant ? "Live, instant" : "Live, synced";
 
   return (
     <main className="shell">
