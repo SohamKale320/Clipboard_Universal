@@ -7,6 +7,13 @@ export const dynamic = "force-dynamic";
 
 const NO_STORE = { "Cache-Control": "no-store" };
 
+const SAVE_SCRIPT = `
+if redis.call('EXISTS', KEYS[1]) == 0 then return -1 end
+redis.call('SET', KEYS[2], ARGV[1], 'EX', ARGV[2])
+redis.call('EXPIRE', KEYS[1], ARGV[2])
+return redis.call('INCR', KEYS[1])
+`;
+
 // Poll: cheap when nothing changed (one tiny read of the version counter).
 export async function GET(
   req: NextRequest,
@@ -69,20 +76,16 @@ export async function PUT(
       );
     }
 
-    const exists = await redis.exists(vKey(code));
-    if (!exists) {
+    // One atomic step: only writes if the room still exists, so a save that arrives just after
+    // a delete can never bring the room back. Text first, then the version bump.
+    const v = (await redis.eval(
+      SAVE_SCRIPT,
+      [vKey(code), tKey(code)],
+      [JSON.stringify({ t: text }), String(LIVE_TTL)]
+    )) as number;
+    if (v === -1) {
       return NextResponse.json({ error: "Room not found. It may have expired." }, { status: 404 });
     }
-
-    // Text first, then bump the version, so a poll never sees a new version with old text.
-    const res = await redis
-      .multi()
-      .set(tKey(code), { t: text }, { ex: LIVE_TTL })
-      .incr(vKey(code))
-      .expire(vKey(code), LIVE_TTL)
-      .exec<[string, number, number]>();
-
-    const v = res[1];
     await publishLive(code, "update", {
       v,
       from: typeof from === "string" ? from.slice(0, 64) : "",

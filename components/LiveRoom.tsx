@@ -46,6 +46,7 @@ export default function LiveRoom({ code }: { code: string }) {
   const [copied, setCopied] = useState("");
   const [showQr, setShowQr] = useState(false);
   const [qr, setQr] = useState("");
+  const [staleSecs, setStaleSecs] = useState(0); // seconds since the last successful sync, 0 = fresh
   const [peers, setPeers] = useState<number | null>(null); // devices in the room, null = unknown
 
   const taRef = useRef<HTMLTextAreaElement>(null);
@@ -58,6 +59,7 @@ export default function LiveRoom({ code }: { code: string }) {
   const savingRef = useRef(false);
   const saveRef = useRef<() => void>(() => {});
   const clientId = useRef(randomId());
+  const lastOkRef = useRef(Date.now());
   const connectedRef = useRef(false); // true while the real-time connection is up
   const fetchRef = useRef<() => Promise<"ok" | "gone" | "limited" | "error">>(async () => "ok");
   const applyIfIdleRef = useRef<(remote: string, v: number) => void>(() => {});
@@ -90,6 +92,7 @@ export default function LiveRoom({ code }: { code: string }) {
       );
       if (ok) {
         versionRef.current = data.v;
+        lastOkRef.current = Date.now();
         setStatus("live");
         setError("");
         if (textRef.current === snapshot) {
@@ -145,6 +148,7 @@ export default function LiveRoom({ code }: { code: string }) {
       }
       if (status === 429) return "limited";
       if (!ok) return "error";
+      lastOkRef.current = Date.now();
       setStatus("live");
       if (data.changed) {
         lastActivityRef.current = Date.now();
@@ -220,6 +224,17 @@ export default function LiveRoom({ code }: { code: string }) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [code]);
+
+  // Tell the user when syncing has stalled, instead of letting it just feel laggy
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (document.hidden) return;
+      const age = Date.now() - lastOkRef.current;
+      const limit = connectedRef.current ? 20000 : 4000;
+      setStaleSecs(age > limit ? Math.floor(age / 1000) : 0);
+    }, 1000);
+    return () => clearInterval(id);
+  }, []);
 
   // Real-time: the server pushes every change the moment it is saved
   useEffect(() => {
@@ -368,6 +383,9 @@ export default function LiveRoom({ code }: { code: string }) {
         <div className="statusbar">
           <span className={`dot ${status === "live" ? "live" : status === "offline" ? "offline" : ""}`} />
           <span>{statusText}</span>
+          {staleSecs > 0 && (
+            <span style={{ color: "var(--err)" }}>· last synced {staleSecs}s ago, retrying</span>
+          )}
           {peers !== null && (
             <span>· {peers <= 1 ? "just you here" : `${peers} devices connected`}</span>
           )}
