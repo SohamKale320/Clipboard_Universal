@@ -195,12 +195,12 @@ export default function Files({ initialCode = "" }: { initialCode?: string }) {
 
   return (
     <main className="shell">
-      <header className="hero center">
+      <header className="hero">
         <h1>
           <span className="l1">Send</span>
           <span className="l2">a file</span>
         </h1>
-        <p className="tag">Up to 50 MB. Get a 6-digit code, open it on another device. Deleted after 15 minutes.</p>
+        <p className="tag">Up to 50 MB. Gone after 15 minutes.</p>
       </header>
 
       <div className="tabs" role="tablist">
@@ -380,10 +380,6 @@ export default function Files({ initialCode = "" }: { initialCode?: string }) {
           )}
         </section>
       )}
-
-      <footer className="foot">
-        Anyone with the code can download the file until it expires. Don&apos;t send anything sensitive.
-      </footer>
     </main>
   );
 }

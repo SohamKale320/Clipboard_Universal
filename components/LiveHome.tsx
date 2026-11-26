@@ -38,9 +38,7 @@ export default function LiveHome() {
           <span className="l1">Live</span>
           <span className="l2">clipboard</span>
         </h1>
-        <p className="tag">
-          Open the same room on two devices. Whatever you type shows up on both, within about a second.
-        </p>
+        <p className="tag">Type on one device, see it on the other.</p>
       </header>
 
       <section className="panel">
@@ -69,10 +67,6 @@ export default function LiveHome() {
 
         {error && <p className="err">{error}</p>}
       </section>
-
-      <footer className="foot">
-        Anyone with the code can read and edit the room. Rooms are deleted after 24 hours without edits.
-      </footer>
     </main>
   );
 }

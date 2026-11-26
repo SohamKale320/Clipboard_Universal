@@ -101,12 +101,12 @@ body {
 .appbar .seg { margin-left: auto; }
 
 /* ---------- hero title ---------- */
-.hero { padding: 20px 6px 2px; }
-.hero h1 { margin: 0; font-size: clamp(40px, 12vw, 58px); line-height: 1.02; letter-spacing: -0.035em; font-weight: 800; }
-.hero .l1 { display: block; color: var(--ink); }
-.hero .l2 { display: block; color: var(--faint); }
+.hero { padding: 22px 0 4px; text-align: center; }
+.hero h1 { margin: 0; font-size: clamp(28px, 8.4vw, 46px); line-height: 1.1; letter-spacing: -0.03em; font-weight: 800; white-space: nowrap; }
+.hero .l1 { color: var(--ink); }
+.hero .l2 { color: var(--faint); margin-left: 0.26em; }
 .hero .mono { font-family: var(--mono); letter-spacing: 0.04em; }
-.tag { margin: 12px 0 0; color: var(--muted); max-width: 44ch; }
+.tag { margin: 10px auto 0; color: var(--muted); font-size: clamp(13px, 3.7vw, 16px); white-space: nowrap; }
 
 /* ---------- segmented control (nav + Send/Open) ---------- */
 .seg, .tabs {
@@ -117,7 +117,7 @@ body {
   border: 1px solid var(--line);
   box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.4);
 }
-.tabs { align-self: flex-start; }
+.tabs { align-self: center; }
 .segbtn, .tab {
   font: inherit; font-size: 14px; font-weight: 600;
   color: var(--muted);

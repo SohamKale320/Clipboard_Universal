@@ -132,7 +132,7 @@ export default function Clipboard({ initialCode = "" }: { initialCode?: string }
           <span className="l1">Stored</span>
           <span className="l2">clipboard</span>
         </h1>
-        <p className="tag">Paste text here, open it on any other device with a 6-digit code.</p>
+        <p className="tag">Paste text, open it anywhere with a code.</p>
       </header>
 
       <div className="tabs" role="tablist">
@@ -332,10 +332,6 @@ export default function Clipboard({ initialCode = "" }: { initialCode?: string }
           )}
         </section>
       )}
-
-      <footer className="foot">
-        Clips are stored temporarily and deleted when they expire. Don&apos;t put anything here you can&apos;t afford to lose.
-      </footer>
     </main>
   );
 }

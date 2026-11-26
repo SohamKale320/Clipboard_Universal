@@ -317,11 +317,6 @@ export default function LiveRoom({ code }: { code: string }) {
           </div>
         )}
       </section>
-
-      <footer className="foot">
-        Anyone with this code can read and edit the room. If two people type at once, the last edit wins.
-        The room is deleted after 24 hours without edits.
-      </footer>
     </main>
   );
 }
