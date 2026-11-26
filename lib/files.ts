@@ -10,6 +10,16 @@ export type FileMeta = {
   delToken: string;
 };
 
+// Vercel normally names it BLOB_READ_WRITE_TOKEN, but a store connected with a custom prefix
+// gets e.g. MYSTORE_READ_WRITE_TOKEN. Accept either so the name never matters.
+export function blobToken(): string | undefined {
+  if (process.env.BLOB_READ_WRITE_TOKEN) return process.env.BLOB_READ_WRITE_TOKEN;
+  const hit = Object.entries(process.env).find(
+    ([k, v]) => k.endsWith("READ_WRITE_TOKEN") && v && v.startsWith("vercel_blob_rw_")
+  );
+  return hit?.[1];
+}
+
 export const fKey = (code: string) => `file:${code}`;
 export const EXPIRY_SET = "files:expiry";
 
@@ -23,7 +33,7 @@ export async function sweepExpired(limit = 20): Promise<number> {
       count: limit,
     });
     if (!urls || urls.length === 0) return 0;
-    await del(urls);
+    await del(urls, { token: blobToken() });
     await redis.zrem(EXPIRY_SET, ...urls);
     return urls.length;
   } catch (e) {

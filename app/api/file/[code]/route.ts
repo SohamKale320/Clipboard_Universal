@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { timingSafeEqual } from "crypto";
 import { del } from "@vercel/blob";
 import { clientIp, readLimit, redis } from "@/lib/redis";
-import { EXPIRY_SET, fKey, sweepExpired, type FileMeta } from "@/lib/files";
+import { EXPIRY_SET, blobToken, fKey, sweepExpired, type FileMeta } from "@/lib/files";
 
 export const dynamic = "force-dynamic";
 
@@ -66,7 +66,7 @@ export async function DELETE(
       return NextResponse.json({ error: "Not allowed." }, { status: 403 });
     }
 
-    await del(meta.url);
+    await del(meta.url, { token: blobToken() });
     await redis.del(fKey(code));
     await redis.zrem(EXPIRY_SET, meta.url);
     return NextResponse.json({ ok: true });

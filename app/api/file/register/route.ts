@@ -3,7 +3,7 @@ import { randomBytes, randomInt } from "crypto";
 import { head } from "@vercel/blob";
 import { clientIp, createLimit, redis } from "@/lib/redis";
 import { FILE_MAX, FILE_TTL, safeName } from "@/lib/fileconfig";
-import { EXPIRY_SET, fKey, sweepExpired, type FileMeta } from "@/lib/files";
+import { EXPIRY_SET, blobToken, fKey, sweepExpired, type FileMeta } from "@/lib/files";
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid file." }, { status: 400 });
     }
 
-    const blob = await head(parsed.toString());
+    const blob = await head(parsed.toString(), { token: blobToken() });
     if (!blob.pathname.startsWith("files/") || blob.size > FILE_MAX) {
       return NextResponse.json({ error: "Invalid file." }, { status: 400 });
     }

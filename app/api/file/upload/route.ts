@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { handleUpload, type HandleUploadBody } from "@vercel/blob/client";
 import { redis } from "@/lib/redis";
 import { FILE_MAX } from "@/lib/fileconfig";
+import { blobToken } from "@/lib/files";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +14,7 @@ export async function POST(req: NextRequest) {
     const json = await handleUpload({
       body,
       request: req,
+      token: blobToken(),
       onBeforeGenerateToken: async (pathname, clientPayload) => {
         if (typeof clientPayload !== "string" || !/^[a-f0-9]{32}$/.test(clientPayload)) {
           throw new Error("Missing upload ticket.");

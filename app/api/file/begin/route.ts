@@ -2,12 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { randomBytes } from "crypto";
 import { clientIp, fileGlobalLimit, fileLimit, redis } from "@/lib/redis";
 import { FILE_MAX } from "@/lib/fileconfig";
+import { blobToken } from "@/lib/files";
 
 export const dynamic = "force-dynamic";
 
 export async function POST(req: NextRequest) {
   try {
-    if (!process.env.BLOB_READ_WRITE_TOKEN && !process.env.BLOB_STORE_ID) {
+    if (!blobToken()) {
       return NextResponse.json(
         { error: "File storage isn't connected yet. Add a Blob store to the Vercel project and redeploy." },
         { status: 503 }
