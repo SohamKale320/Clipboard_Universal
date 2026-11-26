@@ -28,6 +28,14 @@ export const liveReadLimit = new Ratelimit({
   prefix: "rl:liveread",
 });
 
+// Only counted when a poll asks for a room that does not exist, which is what code-guessing
+// looks like. Normal polls of a real room skip the limiter: half the Redis commands, one round trip less.
+export const liveMissLimit = new Ratelimit({
+  redis,
+  limiter: Ratelimit.fixedWindow(60, "1 m"),
+  prefix: "rl:livemiss",
+});
+
 export const liveWriteLimit = new Ratelimit({
   redis,
   limiter: Ratelimit.fixedWindow(600, "1 m"),

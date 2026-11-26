@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
-import { clientIp, liveReadLimit, liveWriteLimit, redis } from "@/lib/redis";
+import { clientIp, liveMissLimit, liveWriteLimit, redis } from "@/lib/redis";
 import { LIVE_MAX, LIVE_TTL, tKey, vKey } from "@/lib/live";
+import { publishLive } from "@/lib/pusher";
 
 export const dynamic = "force-dynamic";
 
@@ -16,14 +17,13 @@ export async function GET(
     if (!/^\d{6}$/.test(code)) {
       return NextResponse.json({ error: "Codes are 6 digits." }, { status: 400 });
     }
-    const limited = await liveReadLimit.limit(clientIp(req));
-    if (!limited.success) {
-      return NextResponse.json({ error: "Too many requests." }, { status: 429 });
-    }
-
     const since = Number(new URL(req.url).searchParams.get("v") ?? -1);
     const v = await redis.get<number>(vKey(code));
     if (v === null || v === undefined) {
+      const missed = await liveMissLimit.limit(clientIp(req));
+      if (!missed.success) {
+        return NextResponse.json({ error: "Too many requests." }, { status: 429 });
+      }
       return NextResponse.json(
         { error: "Room not found. It may have expired." },
         { status: 404, headers: NO_STORE }
@@ -58,7 +58,7 @@ export async function PUT(
       return NextResponse.json({ error: "Too many edits. Slow down." }, { status: 429 });
     }
 
-    const { text } = await req.json().catch(() => ({ text: undefined }));
+    const { text, from } = await req.json().catch(() => ({ text: undefined, from: undefined }));
     if (typeof text !== "string") {
       return NextResponse.json({ error: "Invalid text." }, { status: 400 });
     }
@@ -82,7 +82,13 @@ export async function PUT(
       .expire(vKey(code), LIVE_TTL)
       .exec<[string, number, number]>();
 
-    return NextResponse.json({ v: res[1] }, { headers: NO_STORE });
+    const v = res[1];
+    await publishLive(code, "update", {
+      v,
+      from: typeof from === "string" ? from.slice(0, 64) : "",
+      text,
+    });
+    return NextResponse.json({ v }, { headers: NO_STORE });
   } catch (e) {
     console.error(e);
     return NextResponse.json({ error: "Server error." }, { status: 500 });
@@ -104,6 +110,7 @@ export async function DELETE(
       return NextResponse.json({ error: "Too many requests." }, { status: 429 });
     }
     await redis.del(vKey(code), tKey(code));
+    await publishLive(code, "deleted", {});
     return NextResponse.json({ ok: true }, { headers: NO_STORE });
   } catch (e) {
     console.error(e);
