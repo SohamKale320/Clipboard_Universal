@@ -348,3 +348,95 @@ textarea:focus-visible, select:focus-visible, .input:focus-visible {
 
 .hero.center { text-align: center; }
 .hero.center .tag { margin-left: auto; margin-right: auto; }
+
+/* =====================================================================
+   Motion — short, subtle, GPU-friendly (opacity/transform only).
+   All of it is disabled for people who prefer reduced motion.
+   ===================================================================== */
+@media (prefers-reduced-motion: no-preference) {
+  :root {
+    --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+    --spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+
+  /* --- keyframes --- */
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(10px); }
+    to   { opacity: 1; transform: none; }
+  }
+  @keyframes pop {
+    from { opacity: 0; transform: translateY(6px) scale(0.97); }
+    to   { opacity: 1; transform: none; }
+  }
+  @keyframes drop-in {
+    from { opacity: 0; transform: translateY(-8px); }
+    to   { opacity: 1; transform: none; }
+  }
+  @keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    25%      { transform: translateX(-5px); }
+    60%      { transform: translateX(4px); }
+    85%      { transform: translateX(-2px); }
+  }
+  @keyframes code-in {
+    from { opacity: 0; transform: scale(0.94); letter-spacing: 0.2em; }
+    to   { opacity: 1; transform: none; letter-spacing: 0.08em; }
+  }
+  @keyframes pulse-live {
+    0%, 100% { box-shadow: 0 0 6px rgba(48, 209, 88, 0.6); }
+    50%      { box-shadow: 0 0 14px rgba(48, 209, 88, 1); }
+  }
+
+  /* --- page / panel entrance (replays on route change & tab switch) --- */
+  .appbar { animation: drop-in 0.4s var(--ease-out) backwards; }
+  .shell > .hero  { animation: rise 0.45s var(--ease-out) backwards; }
+  .shell > .tabs  { animation: rise 0.45s var(--ease-out) 0.04s backwards; }
+  .shell > .panel { animation: rise 0.45s var(--ease-out) 0.07s backwards; }
+
+  /* things that appear conditionally inside a panel */
+  .panel > :is(.warn, .filerow, .qr, .out, .input) { animation: pop 0.3s var(--ease-out) backwards; }
+  .panel > .err   { animation: pop 0.3s var(--ease-out) backwards, shake 0.35s 0.05s ease-in-out; }
+  .code           { animation: code-in 0.55s var(--ease-out) backwards; }
+  .qr img         { animation: pop 0.4s var(--ease-out) 0.08s backwards; }
+
+  /* --- interactions --- */
+  .segbtn, .tab {
+    transition: background-color 0.2s, color 0.2s, box-shadow 0.2s, transform 0.15s var(--ease-out);
+  }
+  .primary, .secondary {
+    transition: background-color 0.2s, border-color 0.2s, box-shadow 0.25s,
+      transform 0.18s var(--ease-out), filter 0.2s, opacity 0.2s;
+  }
+  .check { transition: background-color 0.2s, border-color 0.2s; }
+  .check input { transition: background 0.22s, border-color 0.22s; }
+  .check input::after { transition: transform 0.28s var(--spring); }
+  .check input:active::after { width: 28px; }
+  .check input:checked:active::after { transform: translateX(16px); }
+
+  textarea, select, .input {
+    transition: border-color 0.2s, box-shadow 0.25s;
+  }
+
+  .drop { transition: background-color 0.2s, border-color 0.2s, transform 0.25s var(--ease-out); }
+  .drop.over { transform: scale(1.015); }
+
+  .dot { transition: background-color 0.3s, box-shadow 0.3s; }
+  .dot.live { animation: pulse-live 2.4s ease-in-out infinite; }
+
+  @media (hover: hover) {
+    .primary:hover:not(:disabled),
+    .secondary:hover:not(:disabled) { transform: translateY(-1px); }
+    .primary:hover:not(:disabled) {
+      filter: brightness(1.08);
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.4), 0 16px 30px -10px rgba(124, 58, 237, 0.9);
+    }
+    .secondary:hover:not(:disabled) { background: rgba(255, 255, 255, 0.13); }
+    .segbtn:not(.on):hover, .tab:not(.on):hover { color: var(--ink); }
+    .check:hover { background: rgba(255, 255, 255, 0.08); }
+    .drop:hover { background: rgba(139, 92, 246, 0.1); border-color: rgba(196, 181, 253, 0.6); }
+  }
+
+  .primary:active:not(:disabled),
+  .secondary:active:not(:disabled) { transform: scale(0.97); transition-duration: 0.08s; }
+  .segbtn:active, .tab:active { transform: scale(0.96); }
+}
